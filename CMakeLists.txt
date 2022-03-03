@@ -199,3 +199,7 @@ message(STATUS " .. Build utility tools  ........ = ${WITH_TOOLS}"            )
 message(STATUS " .. Disable PNG support  ........ = ${WITHOUT_PNG}"           )
 message(STATUS " .. Installation prefix ......... = ${CMAKE_INSTALL_PREFIX}"  )
 message(STATUS "------------------------------------------------------------ ")
+
+enable_testing()
+add_subdirectory(gtest)
+add_subdirectory(gtests)
