@@ -96,7 +96,7 @@ static void decodeByZbar(const std::vector<uint8_t>& frame, int32_t width, int32
         ASSERT_GT(decodeResult, 0);
 }
 
-void fillFrame(std::vector<uint8_t>& frame, int32_t frame_width, int32_t frame_height, int32_t x_offset, int32_t y_offset,
+static void fillFrame(std::vector<uint8_t>& frame, int32_t frame_width, int32_t frame_height, int32_t x_offset, int32_t y_offset,
                         uint8_t* p_qr_data ,int32_t qr_width, int32_t draw_color, int32_t bg_color, int32_t qr_scale){
     
     ASSERT_TRUE(frame_width >= x_offset + qr_width * qr_scale);
@@ -118,7 +118,7 @@ void fillFrame(std::vector<uint8_t>& frame, int32_t frame_width, int32_t frame_h
     }
 }
 
-void dumpFrame(const std::vector<uint8_t>& frame, std::string file_name){
+static void dumpFrame(const std::vector<uint8_t>& frame, std::string file_name){
     std::ofstream ofs;
     ofs.open(file_name.c_str(), std::ofstream::out | std::ofstream::binary);
     ofs.write(reinterpret_cast<const char*>(frame.data()), frame.size());
@@ -151,7 +151,7 @@ TEST_P(EncodeTest, LIBQRENCODE) {
 
 using namespace qrcodegen;
 
-void fillFrameQRgen(std::vector<uint8_t>& frame, int32_t frame_width, int32_t frame_height, int32_t x_offset, int32_t y_offset,
+static void fillFrameQRgen(std::vector<uint8_t>& frame, int32_t frame_width, int32_t frame_height, int32_t x_offset, int32_t y_offset,
                         const QrCode& qr_code, int32_t draw_color, int32_t bg_color, int32_t qr_scale){
     
     const int32_t qrSize = qr_code.getSize();
@@ -174,7 +174,7 @@ void fillFrameQRgen(std::vector<uint8_t>& frame, int32_t frame_width, int32_t fr
     }
 }
 
-QrCode::Ecc getQRgenLevel(QRecLevel level){
+static QrCode::Ecc getQRgenLevel(QRecLevel level){
     switch(level){
         case QR_ECLEVEL_L:
             return QrCode::Ecc::LOW;
@@ -215,7 +215,8 @@ INSTANTIATE_TEST_SUITE_P(All, EncodeTest,
                                 testing::Values(QR_ECLEVEL_L,
                                 QR_ECLEVEL_M,
                                 QR_ECLEVEL_Q,
-                                QR_ECLEVEL_H),
+                                QR_ECLEVEL_H
+                                ),
                                 testing::Range(1, QRSPEC_VERSION_MAX + 1, 1),
                                 testing::ValuesIn({
                                     CheckFunc{check_func_t(decodeByQuirc), "quirc"},
@@ -230,36 +231,72 @@ INSTANTIATE_TEST_SUITE_P(All, EncodeTest,
                                 }
                          );
 
-TEST_P(EncodeTest, QRCODEGEN_INTERCOMPRESSIONS) {
+static void fillFrameRestoredQR(std::vector<uint8_t>& frame, int32_t frame_width, int32_t frame_height, int32_t x_offset, int32_t y_offset,
+                        const std::vector<std::vector<bool>>& restored_qr, int32_t draw_color, int32_t bg_color, int32_t qr_scale){
+    
+    const int32_t qr_size = static_cast<int32_t>(restored_qr.size());
+    ASSERT_EQ(qr_size, restored_qr.size());
+    ASSERT_TRUE(frame_width >= x_offset + qr_size * qr_scale);
+    ASSERT_TRUE(frame_height >= y_offset + qr_size * qr_scale);
+    frame.clear();
+    frame.resize(frame_width*frame_height, bg_color);
+    auto frameIt = frame.begin() + y_offset * frame_width;
+
+    for(int32_t y = 0; y < qr_size; y++){
+        for(int32_t x = 0; x < qr_size; x++){
+            uint8_t val = restored_qr.at(y).at(x) ? draw_color : bg_color;
+            std::fill_n(frameIt + x_offset + x * qr_scale, qr_scale, val);
+        }
+        frameIt += frame_width;
+        for(uint32_t cnt = 1; cnt < qr_scale; ++cnt){
+            std::copy_n(frameIt - frame_width, frame_width, frameIt);
+            frameIt += frame_width;
+        }
+    }
+}
+
+TEST_P(EncodeTest, QRCODEGEN_INTERCOMPRESSION) {
     const auto& param = GetParam();
     const auto level = std::get<0>(param);
     const auto version = std::get<1>(param);
     auto data_size = calculateDataSize(version, level);
 
-    for(int32_t i = 0; i< 100; ++i ){
+    for(int32_t i = 0; i< 1; ++i ){
         generateData(version, level);
         //const auto data1 = m_random_data;
-        QrCode qr_ref = QrCode::encodeBinary(m_random_data, getQRgenLevel(level));
+        const QrCode qr_ref = QrCode::encodeBinary(m_random_data, getQRgenLevel(level));
         generateData(version, level);
         const auto ref_data = m_random_data;
-        QrCode qr = QrCode::encodeBinary(m_random_data, getQRgenLevel(level));
+        const QrCode qr = QrCode::encodeBinary(m_random_data, getQRgenLevel(level));
 
         QRCompression compression;
         compression.compress(qr_ref, qr);
-        std::cout << compression.getCompressionError() << std::endl;
-
+        std::cout << "Error: " << compression.getCompressionError() << std::endl;
         ASSERT_EQ(qr_ref.getVersion(), version);
         ASSERT_EQ(qr_ref.getErrorCorrectionLevel(), getQRgenLevel(level));
+        std::vector<std::vector<bool>> restored_qr;
+        compression.restoreQR(qr_ref, restored_qr);
+        const auto code_size = qr_ref.getSize();
+        ASSERT_EQ(restored_qr.size(), qr_ref.getSize());
+
         std::vector<uint8_t> frame;
-        const int32_t scale = 1;
-        const int32_t fr_width = qr_ref.getSize();//qr_code->width*scale;
-        const int32_t fr_height = qr_ref.getSize();//qr_code->width*scale;
-        const int32_t x_offset = 0;
-        const int32_t y_offset = 0;
-        fillFrameQRgen(frame, fr_width, fr_height, x_offset, y_offset, qr_ref, 0, 255, scale);
+        const int32_t scale = 4;
+        const int32_t fr_width = 1080;//qr_code->width*scale;
+        const int32_t fr_height = 720;//qr_code->width*scale;
+        const int32_t x_offset = (fr_width - code_size*scale)/2;
+        const int32_t y_offset = (fr_height - code_size*scale)/2;
+        uint32_t err = 0;
+        uint32_t counter = 0;
+        for(auto y = 0; y < code_size; ++y) {
+            for(auto x = 0; x < code_size; ++x) {
+                ++counter;
+                err += (qr.getModule(x, y) == restored_qr.at(y).at(x)) ? 0 : 1;
+            }
+        }
 
+        fillFrameRestoredQR(frame, fr_width, fr_height, x_offset, y_offset, restored_qr, 0, 255, scale);
         std::get<2>(param).m_func(frame, fr_width, fr_height);
-
-
+        fillFrameQRgen(frame, fr_width, fr_height, x_offset, y_offset, qr_ref, 0, 255, scale);
+        std::get<2>(param).m_func(frame, fr_width, fr_height);
     }
 };

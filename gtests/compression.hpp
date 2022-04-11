@@ -56,7 +56,11 @@ public:
     ~QRCompression() = default;
 
     void compress(const QrCode& ref, const QrCode& comp);
+    void restoreQR(const QrCode& ref, std::vector<std::vector<bool>>& restored_qr);
     uint64_t getCompressionError() const;
+    const std::vector<line_compression_t>& getLineCompressions() const {
+        return m_compressions;
+    };
 private:
     std::vector<line_compression_t> m_compressions;
     static std::map<uint8_t, compress_func_t> m_compress_functions;
